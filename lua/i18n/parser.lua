@@ -392,7 +392,7 @@ local function parse_yaml(content)
     end
 
     -- Match key: value (value on same line)
-    local key, value = line:match("^%s*['\"]?([%w_%.%-]+)['\"]?:%s+(.+)%s*$")
+    local key, value = line:match("^%s*['\"]?([%w_%.%-/]+)['\"]?:%s+(.+)%s*$")
     if key and value then
       value = value:gsub("^['\"]", ""):gsub("['\"]$", "")
       local full_key = prefix ~= "" and (prefix .. "." .. key) or key
@@ -403,7 +403,7 @@ local function parse_yaml(content)
     end
 
     -- Match key: (no value = parent node)
-    local parent_key = line:match("^%s*['\"]?([%w_%.%-]+)['\"]?:%s*$")
+    local parent_key = line:match("^%s*['\"]?([%w_%.%-/]+)['\"]?:%s*$")
     if parent_key then
       local full_key = prefix ~= "" and (prefix .. "." .. parent_key) or parent_key
       table.insert(stack, { indent = indent, prefix = full_key })

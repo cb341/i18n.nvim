@@ -563,7 +563,7 @@ local function append_yaml_key(file, relative_key, value, locale)
       end
 
       if line_indent == expected_indent then
-        local line_key = l:match("^%s*['\"]?([%w_%.%-]+)['\"]?:%s*")
+        local line_key = l:match("^%s*['\"]?([%w_%.%-/]+)['\"]?:%s*")
         if line_key == seg then
           found = true
           matched_depth = depth
