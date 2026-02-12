@@ -365,20 +365,92 @@ end
 
 -- 解析 YAML 文件
 local function parse_yaml(content)
-  -- 简单的 YAML 解析，实际使用可能需要更复杂的解析器
   local result = {}
   local line_map = {}
   local col_map = {}
+  -- Stack tracks {indent_level, key_prefix} for each nesting depth
+  local stack = {}
   local idx = 0
-  for line in content:gmatch("[^\r\n]+") do
+
+  for line in content:gmatch("[^\r\n]*") do
     idx = idx + 1
-    local key, value = line:match("^%s*([%w%.]+):%s*(.+)%s*$")
+    -- Skip blank lines and comments
+    if line:match("^%s*$") or line:match("^%s*#") then
+      goto continue
+    end
+
+    local indent = #(line:match("^(%s*)") or "")
+    -- Pop stack entries at same or deeper indent (we've moved back up)
+    while #stack > 0 and stack[#stack].indent >= indent do
+      table.remove(stack)
+    end
+
+    -- Build current prefix from stack
+    local prefix = ""
+    if #stack > 0 then
+      prefix = stack[#stack].prefix
+    end
+
+    -- Match key: value (value on same line)
+    local key, value = line:match("^%s*['\"]?([%w_%.%-]+)['\"]?:%s+(.+)%s*$")
     if key and value then
       value = value:gsub("^['\"]", ""):gsub("['\"]$", "")
-      result[key] = value
-      line_map[key] = idx
+      local full_key = prefix ~= "" and (prefix .. "." .. key) or key
+      result[full_key] = value
+      line_map[full_key] = idx
+      col_map[full_key] = indent + 1
+      goto continue
     end
+
+    -- Match key: (no value = parent node)
+    local parent_key = line:match("^%s*['\"]?([%w_%.%-]+)['\"]?:%s*$")
+    if parent_key then
+      local full_key = prefix ~= "" and (prefix .. "." .. parent_key) or parent_key
+      table.insert(stack, { indent = indent, prefix = full_key })
+    end
+
+    ::continue::
   end
+
+  -- Strip single top-level locale key (e.g. Rails "en:" wrapper)
+  -- Detect: if all keys share the same first segment, strip it
+  local first_segments = {}
+  for k, _ in pairs(result) do
+    local seg = k:match("^([^.]+)")
+    if seg then first_segments[seg] = true end
+  end
+  -- Also check stack roots for parent-only keys
+  local top_keys = {}
+  for k, _ in pairs(result) do
+    local top = k:match("^([^.]+)%.")
+    if top then top_keys[top] = true end
+  end
+
+  -- Count unique top-level segments
+  local count = 0
+  local single_root = nil
+  for seg, _ in pairs(first_segments) do
+    count = count + 1
+    single_root = seg
+  end
+
+  if count == 1 and single_root then
+    -- All keys share one root — likely a locale key, strip it
+    local stripped = {}
+    local stripped_line_map = {}
+    local stripped_col_map = {}
+    local prefix_len = #single_root + 2 -- "en." = 3 chars
+    for k, v in pairs(result) do
+      local new_key = k:sub(prefix_len)
+      if new_key ~= "" then
+        stripped[new_key] = v
+        stripped_line_map[new_key] = line_map[k]
+        stripped_col_map[new_key] = col_map[k]
+      end
+    end
+    return stripped, stripped_line_map, stripped_col_map
+  end
+
   return result, line_map, col_map
 end
 
