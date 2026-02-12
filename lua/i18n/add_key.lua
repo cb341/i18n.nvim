@@ -512,6 +512,118 @@ local function append_js_ts_property(file, relative_key, value)
   return ok
 end
 
+-- Insert a key into a YAML file, creating intermediate nodes as needed.
+-- relative_key: dot-separated path (e.g. "enums.croms.yes_no.maybe")
+-- value: the translation string
+-- locale: locale code (e.g. "en") used as the root key in Rails YAML
+local function append_yaml_key(file, relative_key, value, locale)
+  local content = utils.read_file(file)
+  local lines
+  if not content or content == "" then
+    lines = { (locale or "en") .. ":" }
+  else
+    lines = vim.split(content, '\n', true)
+  end
+
+  -- Detect indent unit from existing file (default 2 spaces)
+  local indent_unit = "  "
+  for _, l in ipairs(lines) do
+    local spaces = l:match("^(%s+)%S")
+    if spaces and #spaces > 0 then
+      indent_unit = spaces
+      break
+    end
+  end
+  local indent_size = #indent_unit
+
+  local segments = {}
+  if locale then
+    table.insert(segments, locale)
+  end
+  for seg in relative_key:gmatch("[^%.]+") do
+    table.insert(segments, seg)
+  end
+
+  local node_line = 0    -- line where matched key lives (children start after)
+  local subtree_end = 0  -- last line of matched node's subtree (insert siblings after)
+  local matched_depth = 0
+
+  for depth = 1, #segments do
+    local seg = segments[depth]
+    local expected_indent = indent_size * (depth - 1)
+    local found = false
+
+    local start = (node_line > 0) and (node_line + 1) or 1
+    for i = start, #lines do
+      local l = lines[i]
+      local line_indent = #(l:match("^(%s*)") or "")
+
+      if l:match("%S") and line_indent < expected_indent then
+        break
+      end
+
+      if line_indent == expected_indent then
+        local line_key = l:match("^%s*['\"]?([%w_%.%-]+)['\"]?:%s*")
+        if line_key == seg then
+          found = true
+          matched_depth = depth
+          node_line = i
+          subtree_end = i
+          for j = i + 1, #lines do
+            local jl = lines[j]
+            local j_indent = #(jl:match("^(%s*)") or "")
+            if jl:match("%S") and j_indent <= expected_indent then
+              break
+            end
+            subtree_end = j
+          end
+          break
+        end
+      end
+    end
+
+    if not found then break end
+  end
+
+  -- Build lines to insert for unmatched segments
+  local new_lines = {}
+  for depth = matched_depth + 1, #segments do
+    local seg = segments[depth]
+    local ind = string.rep(indent_unit, depth - 1)
+    if depth == #segments then
+      local quoted = value
+      if value:match('[:%#{}&*!|>\'",%%@`]') or value == "" or value:match("^%s") or value:match("%s$") then
+        quoted = '"' .. value:gsub('\\', '\\\\'):gsub('"', '\\"') .. '"'
+      end
+      table.insert(new_lines, ind .. seg .. ": " .. quoted)
+    else
+      table.insert(new_lines, ind .. seg .. ":")
+    end
+  end
+
+  if #new_lines == 0 then
+    return true
+  end
+
+  -- Insert after subtree end of deepest matched node
+  local pos = subtree_end > 0 and subtree_end or #lines
+  while pos > 0 and (lines[pos] == nil or lines[pos]:match("^%s*$")) do
+    pos = pos - 1
+  end
+  if pos == 0 then pos = #lines end
+
+  for i, nl in ipairs(new_lines) do
+    table.insert(lines, pos + i, nl)
+  end
+
+  local ok = pcall(function()
+    local f = assert(io.open(file, "w"))
+    f:write(table.concat(lines, "\n"))
+    f:close()
+  end)
+  return ok
+end
+
 local function write_key_to_files(key, values, filemap)
   for locale, data in pairs(filemap) do
     local file = data.file
@@ -552,7 +664,22 @@ local function write_key_to_files(key, values, filemap)
             end
         end
       elseif ext == "yml" or ext == "yaml" then
-        vim.notify("[i18n] YAML write not yet supported (skipped): " .. file, vim.log.levels.WARN)
+        ensure_dir(file)
+        local rel = key:gsub("^" .. vim.pesc(data.prefix), "")
+        local ok_yaml = append_yaml_key(file, rel, values[locale], locale)
+        if not ok_yaml then
+          vim.notify("[i18n] Failed updating YAML file: " .. file, vim.log.levels.ERROR)
+        else
+          vim.notify("[i18n] Updated YAML: " .. file, vim.log.levels.DEBUG)
+          local bufnr = vim.fn.bufnr(file)
+          if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
+            local newc = utils.read_file(file)
+            if newc then
+              local lines = vim.split(newc, '\n', true)
+              vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+            end
+          end
+        end
       elseif ext == "js" or ext == "ts" then
         ensure_dir(file)
         local rel = key:gsub("^" .. vim.pesc(data.prefix), "")
