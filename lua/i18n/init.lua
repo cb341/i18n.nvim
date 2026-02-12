@@ -228,11 +228,18 @@ local function apply_framework_suggestions(fw_result)
   -- Apply func_pattern if not explicitly set by user
   if suggestions.func_pattern and opts._user_func_pattern == nil then
     opts._framework_func_pattern = suggestions.func_pattern
+    opts._func_pattern_spec = suggestions.func_pattern
+    opts.func_pattern = cfg.normalize_func_patterns(suggestions.func_pattern)
   end
 
   -- Apply func_type if not explicitly set by user
   if suggestions.func_type and opts._user_func_type == nil then
     opts._framework_func_type = suggestions.func_type
+    opts.func_type = suggestions.func_type
+    -- Also set filetypes for display overlay if not explicitly configured
+    if opts._user_filetypes == nil and not opts.filetypes and not opts.ft then
+      opts.filetypes = suggestions.func_type
+    end
   end
 
   -- Apply namespace_resolver if not explicitly set by user

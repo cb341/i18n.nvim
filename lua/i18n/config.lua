@@ -279,6 +279,8 @@ local function normalize_func_patterns(raw)
   return normalized
 end
 
+M.normalize_func_patterns = normalize_func_patterns
+
 M.defaults = {
   -- Activation strategy for the plugin
   -- Options:
