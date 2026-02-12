@@ -370,10 +370,23 @@ local function parse_yaml(content)
   local col_map = {}
   -- Stack tracks {indent_level, key_prefix} for each nesting depth
   local stack = {}
-  local idx = 0
 
-  for line in content:gmatch("[^\r\n]*") do
-    idx = idx + 1
+  -- Split into lines, handling both \n and \r\n
+  local raw_lines = {}
+  local pos = 1
+  while pos <= #content do
+    local nl = content:find("\n", pos, true)
+    if nl then
+      local line = content:sub(pos, nl - 1):gsub("\r$", "")
+      table.insert(raw_lines, line)
+      pos = nl + 1
+    else
+      table.insert(raw_lines, content:sub(pos):gsub("\r$", ""))
+      break
+    end
+  end
+
+  for idx, line in ipairs(raw_lines) do
     -- Skip blank lines and comments
     if line:match("^%s*$") or line:match("^%s*#") then
       goto continue
