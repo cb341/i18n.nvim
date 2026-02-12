@@ -730,25 +730,19 @@ local function scan_vars(pattern, vars, idx, cb)
   end
 
   -- 判断变量后是否直接跟着扩展名（如 .ts/.js/.json），如果是则扫描文件
-  -- 支持 {module}.ts 这种情况
+  -- 支持 {module}.ts 以及 {module}.en.yml 这种情况
   local ext
-  -- 优先用 pattern 匹配 {var}.ext 形式
-  local ext_pattern = pattern:match("{" .. var .. "}%.([%w_]+)")
-  if ext_pattern then
-    ext = ext_pattern
-  else
-    -- 其次用 after 匹配 .ext 结尾，但仅在后续不再包含占位符时才视为文件
-    local has_next_placeholder = after:find('{', 1, true)
-    if not has_next_placeholder then
-      ext = after:match("%.([%w_]+)$")
-    end
+  local has_next_placeholder = after:find('{', 1, true)
+  if not has_next_placeholder and after:match("^%.") then
+    -- No more placeholders; use full suffix as file extension match
+    -- e.g. after = ".en.yml" -> ext = ".en.yml"
+    ext = after
   end
   if ext then
-    ext = "." .. ext
     if utils.file_exists(dir) then
       local subs = utils.scan_sub(dir, ext)
       for _, sub in ipairs(subs) do
-        local sub_name = sub:gsub("%" .. ext .. "$", "")
+        local sub_name = sub:gsub(ext:gsub("([%.%-%+%*%?%[%]%(%)%^%$])", "%%%1") .. "$", "")
         local replaced = pattern:gsub("{" .. var .. "}", sub_name, 1)
         scan_vars(replaced, vars, idx + 1, cb)
       end
