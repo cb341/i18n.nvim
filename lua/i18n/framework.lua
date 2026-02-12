@@ -83,6 +83,19 @@ M.frameworks = {
     priority = -1,
   },
 
+  -- Ruby on Rails I18n
+  ['rails-i18n'] = {
+    name = 'rails-i18n',
+    display_name = 'Rails I18n',
+    packages = {},
+    config_files = { 'config/application.rb', 'Gemfile' },
+    root_patterns = { 'config/application.rb', 'Gemfile', 'Rakefile', 'app/controllers' },
+    source_patterns = { 'config/locales/*.yml', 'config/locales/**/*.yml' },
+    func_pattern = { 't', 'I18n.t', 'I18n.translate', 'translate' },
+    func_type = { 'eruby', 'ruby' },
+    namespace_resolver = false,
+  },
+
   -- Java Spring MessageSource
   ['spring-messages'] = {
     name = 'spring-messages',
@@ -301,6 +314,8 @@ function M.is_i18n_project(opts)
     'langs',
     'messages',
     'translations',
+    -- Rails
+    'config/locales',
   }
 
   for _, indicator in ipairs(indicators) do
