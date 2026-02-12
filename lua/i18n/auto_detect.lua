@@ -229,16 +229,23 @@ local function analyze_locale_directory(dir_path, known_locales, extensions)
     -- Type: locale as file (e.g., locales/en.json, locales/zh.json)
     local detected_locales = {}
     local file_extension = nil
+    local has_prefixed_files = false
 
     for _, lf in ipairs(locale_files) do
       table.insert(detected_locales, lf.locale)
       file_extension = file_extension or get_extension(lf.entry.name)
+      -- Check if filename has a prefix before the locale (e.g. croms.en.yml)
+      local name_no_ext = lf.entry.name:match('^(.+)%.[^.]+$') or lf.entry.name
+      if name_no_ext ~= lf.locale then
+        has_prefixed_files = true
+      end
     end
 
     return {
       type = 'locale_as_file',
       detected_locales = detected_locales,
       file_extension = file_extension,
+      has_prefixed_files = has_prefixed_files,
     }
   end
 
@@ -345,7 +352,18 @@ local function generate_source_config(locale_dir_info, analysis, cwd)
       pattern_path = pattern_path .. '.' .. (analysis.module_extension or 'json')
     end
   elseif analysis.type == 'locale_as_file' then
-    pattern_path = pattern_path .. '/{locales}.' .. (analysis.file_extension or 'json')
+    local ext = analysis.file_extension or 'json'
+    pattern_path = pattern_path .. '/{locales}.' .. ext
+
+    -- If there are prefixed files (e.g. croms.en.yml), also generate a {module} pattern
+    if analysis.has_prefixed_files then
+      source_config.pattern = pattern_path
+      -- Return multiple source configs
+      local prefixed_config = {
+        pattern = (pattern_path:gsub('/{locales}%.' .. ext .. '$', '/{module}.{locales}.' .. ext)),
+      }
+      return { source_config, prefixed_config }, analysis.detected_locales
+    end
   end
 
   source_config.pattern = pattern_path
@@ -355,7 +373,7 @@ local function generate_source_config(locale_dir_info, analysis, cwd)
     source_config.prefix = table.concat(prefix_parts, '.') .. '.'
   end
 
-  return source_config, analysis.detected_locales
+  return { source_config }, analysis.detected_locales
 end
 
 -- Deduplicate and merge locale lists
@@ -434,10 +452,14 @@ function M.detect(opts)
 
         if analysis and analysis.detected_locales and #analysis.detected_locales > 0 then
           -- Generate source config
-          local source_config, detected = generate_source_config(locale_dir_info, analysis, cwd)
+          local source_configs, detected = generate_source_config(locale_dir_info, analysis, cwd)
 
-          if source_config and source_config.pattern then
-            table.insert(all_sources, source_config.prefix and source_config or source_config.pattern)
+          if source_configs then
+            for _, sc in ipairs(source_configs) do
+              if sc and sc.pattern then
+                table.insert(all_sources, sc.prefix and sc or sc.pattern)
+              end
+            end
             table.insert(all_locales, detected)
           end
         end
@@ -554,10 +576,12 @@ function M.debug(custom_opts)
             print('      module_extension: ' .. analysis.module_extension)
           end
 
-          local source_config, detected = generate_source_config(locale_dir_info, analysis, cwd)
+          local source_configs, detected = generate_source_config(locale_dir_info, analysis, cwd)
           print('    Generated config:')
-          print('      pattern: ' .. (source_config.pattern or 'nil'))
-          print('      prefix: ' .. (source_config.prefix or '(none)'))
+          for _, sc in ipairs(source_configs or {}) do
+            print('      pattern: ' .. (sc.pattern or 'nil'))
+            print('      prefix: ' .. (sc.prefix or '(none)'))
+          end
         else
           print('    Analysis: FAILED (no valid structure found)')
 
